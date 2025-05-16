@@ -1,24 +1,24 @@
-import socket
+# 封装视频保存逻辑的类
 import cv2
 import numpy as np
-import struct
 import os
 
-# 新增：封装视频保存逻辑的类
+
 class VideoSaver:
     """用于管理视频写入的工具类"""
+
     def __init__(self, video_filename, frame_rate=20):
         self.video_filename = video_filename
         self.frame_rate = frame_rate
         self.video_writer = None  # 视频写入器实例
-        self.frame_size = None    # 视频帧尺寸（宽度，高度）
+        self.frame_size = None  # 视频帧尺寸（宽度，高度）
 
     def write_frame(self, frame):
         """写入单帧图像到视频文件（自动处理首次初始化）"""
         if self.video_writer is None:
             # 首次调用时根据帧尺寸初始化视频写入器
             self.frame_size = (frame.shape[1], frame.shape[0])  # (宽度，高度)
-            fourcc = cv2.VideoWriter_fourcc(*'XVID')            # 定义视频编码格式
+            fourcc = cv2.VideoWriter_fourcc(*'XVID')  # 定义视频编码格式
             self.video_writer = cv2.VideoWriter(
                 self.video_filename,
                 fourcc,
@@ -33,67 +33,75 @@ class VideoSaver:
             self.video_writer.release()
             self.video_writer = None
 
-# 创建保存目录
-img_save_dir = 'received_images'
-os.makedirs(img_save_dir, exist_ok=True)
 
-# 视频保存参数（修改：使用VideoSaver替代原变量）
-video_filename = 'output.avi'
-frame_rate = 20  # 可根据实际情况调整
-video_saver = VideoSaver(video_filename, frame_rate)  # 初始化视频保存器
+# 读取一个文件夹下面的所有的文件
+def read_images_from_folder(folder_path: str) -> list[np.ndarray]:
+    """
+    从指定文件夹中读取所有有效图片
 
-server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-server_socket.bind(('0.0.0.0', 8010))
-server_socket.listen(1)
-print('Waiting for client...')
+    Args,参数:
+        folder_path: 包含图片的文件夹路径
 
-conn, adder = server_socket.accept()
-print('Client connected from:', adder)
+    Returns,返回:
+        OpenCV图片列表（numpy数组形式）
+    """
+    image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.gif'}
+    images = []
 
-frame_count = 0
+    # 遍历文件夹中的所有文件
+    for filename in os.listdir(folder_path):
+        # 获取完整文件路径
+        file_path = os.path.join(folder_path, filename)
 
-while True:
-    # 接收数据长度（未修改部分保持原样）
-    data_len_bytes = conn.recv(4)
-    if not data_len_bytes:
-        break
-    data_len = struct.unpack('!I', data_len_bytes)[0]
+        # 检查是否为文件且具有有效的图片扩展名
+        if os.path.isfile(file_path):
+            file_ext = os.path.splitext(filename)[1].lower()  # 获取小写格式的文件扩展名
+            if file_ext in image_extensions:
+                # 使用OpenCV读取图片
+                img = cv2.imread(file_path)
+                if img is not None:  # 仅添加成功读取的图片
+                    images.append(img)
 
-    # 接收图像数据（未修改部分保持原样）
-    data = b''
-    while len(data) < data_len:
-        packet = conn.recv(data_len - len(data))
-        if not packet:
-            break
-        data += packet
+    return images
 
-    # 解码图像（未修改部分保持原样）
-    np_data = np.frombuffer(data, dtype=np.uint8)
-    img = cv2.imdecode(np_data, cv2.IMREAD_COLOR)
 
-    if img is not None:
-        frame_count += 1
-        cv2.imshow('Server - Received', img)
-
-        # 保存单帧图片（未修改部分保持原样）
-        img_filename = os.path.join(img_save_dir, f'img_{frame_count:04d}.jpg')
-        cv2.imwrite(img_filename, img)
-        print(f'Saved: {img_filename}')
-
-        # 修改：通过VideoSaver写入视频帧（替代原video_writer.write）
+def main() -> None:
+    # 创建文件的保存的目录
+    video_filename = '将图片读进视频里面.avi'
+    # 创建一个将图片保存为视频的对象
+    video_saver = VideoSaver(video_filename, frame_rate=20)  # 初始化视频保存器
+    # 创建帧计数器
+    frame_count = 0
+    # 读取文件夹下面的所有的图片
+    folder_path = 'received_images'
+    images = read_images_from_folder(folder_path)
+    for img in images:
+        frame_count += 1  # 帧计数器递增
+        # 将图片保存为视频
         video_saver.write_frame(img)
+    print('已经成功将文件夹下的文件保存为视频')
+    print('视频的总的的帧数为：', frame_count)
+    video_saver.release()
 
-        # 发送确认信息（未修改部分保持原样）
-        conn.sendall(b'Image received.')
 
-        if cv2.waitKey(1) == 27:
+def text() -> None:
+    veideo = cv2.VideoCapture('./opencv里面的基础操作/2.mp4')  # 打开视频文件
+    frame_count = 0
+    while True:
+        ret, frame = veideo.read()
+        if not ret:
             break
-    else:
-        print('Failed to decode image.')
+        cv2.imshow('video', frame)
+        if cv2.waitKey(0) & 0xFF == 27:
+            break
+        frame_count += 1
+        image_file = os.path.join('received_images', f'img_{frame_count:04d}.jpg')
+        cv2.imwrite(image_file, frame)
+    print('已经成功将视频保存为图片')
+    veideo.release()
+    cv2.destroyAllWindows()
 
-# 清理资源（修改：通过VideoSaver释放资源）
-conn.close()
-server_socket.close()
-cv2.destroyAllWindows()
-video_saver.release()  # 替代原video_writer.release()
-print('Server shutdown, video saved to:', video_filename)
+
+if __name__ == '__main__':
+    main()
+    # text()
